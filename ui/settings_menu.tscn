@@ -1,0 +1,167 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/settings_menu.gd" id="1_script"]
+
+[node name="SettingsMenu" type="CanvasLayer"]
+layer = 11
+script = ExtResource("1_script")
+
+[node name="Background" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.8)
+mouse_filter = 0
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Panel" type="PanelContainer" parent="CenterContainer"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="CenterContainer/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "设置"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+theme_override_colors/font_color = Color(0.9, 0.85, 0.7, 1)
+
+[node name="MouseSensRow" type="HBoxContainer" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MouseSensLabel" type="Label" parent="CenterContainer/Panel/VBox/MouseSensRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 0)
+text = "鼠标灵敏度"
+theme_override_font_sizes/font_size = 16
+
+[node name="MouseSensSlider" type="HSlider" parent="CenterContainer/Panel/VBox/MouseSensRow"]
+custom_minimum_size = Vector2(180, 20)
+layout_mode = 2
+min_value = 0.0005
+max_value = 0.005
+step = 0.0001
+value = 0.002
+
+[node name="MouseSensValue" type="Label" parent="CenterContainer/Panel/VBox/MouseSensRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(60, 0)
+text = "0.0020"
+theme_override_font_sizes/font_size = 14
+horizontal_alignment = 2
+
+[node name="FOVRow" type="HBoxContainer" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="FOVLabel" type="Label" parent="CenterContainer/Panel/VBox/FOVRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 0)
+text = "视野"
+theme_override_font_sizes/font_size = 16
+
+[node name="FOVSlider" type="HSlider" parent="CenterContainer/Panel/VBox/FOVRow"]
+custom_minimum_size = Vector2(180, 20)
+layout_mode = 2
+min_value = 60.0
+max_value = 100.0
+step = 1.0
+value = 75.0
+
+[node name="FOVValue" type="Label" parent="CenterContainer/Panel/VBox/FOVRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(60, 0)
+text = "75"
+theme_override_font_sizes/font_size = 14
+horizontal_alignment = 2
+
+[node name="VolumeRow" type="HBoxContainer" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="VolumeLabel" type="Label" parent="CenterContainer/Panel/VBox/VolumeRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 0)
+text = "主音量"
+theme_override_font_sizes/font_size = 16
+
+[node name="VolumeSlider" type="HSlider" parent="CenterContainer/Panel/VBox/VolumeRow"]
+custom_minimum_size = Vector2(180, 20)
+layout_mode = 2
+min_value = 0.0
+max_value = 1.0
+step = 0.05
+value = 0.8
+
+[node name="VolumeValue" type="Label" parent="CenterContainer/Panel/VBox/VolumeRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(60, 0)
+text = "80%"
+theme_override_font_sizes/font_size = 14
+horizontal_alignment = 2
+
+[node name="FullscreenCheck" type="CheckBox" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "全屏"
+theme_override_font_sizes/font_size = 16
+
+[node name="VolumetricCheck" type="CheckBox" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "体积光（灯光雾束）"
+theme_override_font_sizes/font_size = 16
+
+[node name="DustCheck" type="CheckBox" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "环境浮尘"
+theme_override_font_sizes/font_size = 16
+
+[node name="AAHint" type="Label" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "— 画面 —"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.7, 0.66, 0.5, 1)
+
+[node name="AARow" type="HBoxContainer" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="AALabel" type="Label" parent="CenterContainer/Panel/VBox/AARow"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 0)
+text = "抗锯齿"
+theme_override_font_sizes/font_size = 16
+
+[node name="AAOption" type="OptionButton" parent="CenterContainer/Panel/VBox/AARow"]
+custom_minimum_size = Vector2(230, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+
+[node name="SSAORow" type="HBoxContainer" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SSAOCheck" type="CheckBox" parent="CenterContainer/Panel/VBox/SSAORow"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 0)
+text = "环境光遮蔽"
+theme_override_font_sizes/font_size = 16
+
+[node name="SSAOQualityOption" type="OptionButton" parent="CenterContainer/Panel/VBox/SSAORow"]
+custom_minimum_size = Vector2(110, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+
+[node name="BackButton" type="Button" parent="CenterContainer/Panel/VBox"]
+custom_minimum_size = Vector2(220, 40)
+layout_mode = 2
+text = "返回"
+theme_override_font_sizes/font_size = 18
