@@ -11,6 +11,7 @@ const Atmosphere = preload("res://generation/atmosphere.gd")
 @onready var settings_button: Button = $UI/CenterContainer/VBox/SettingsButton
 @onready var quit_button: Button = $UI/CenterContainer/VBox/QuitButton
 @onready var settings_menu: CanvasLayer = $SettingsMenu
+@onready var level_select: CanvasLayer = $LevelSelect
 @onready var bhop_toggle: CheckBox = $UI/BhopToggle
 @onready var cheat_toast: PanelContainer = $UI/CheatToast
 @onready var cheat_toast_label: Label = $UI/CheatToast/Label
@@ -38,6 +39,7 @@ func _ready() -> void:
 	settings_button.pressed.connect(_on_settings)
 	quit_button.pressed.connect(_on_quit)
 	settings_menu.closed.connect(_on_settings_closed)
+	level_select.closed.connect(_on_level_select_closed)
 	bhop_toggle.toggled.connect(_on_bhop_toggled)
 	# 同一局内已解锁过（回主菜单再进），开关保持可见可用
 	bhop_toggle.visible = GameState.bhop_enabled
@@ -45,6 +47,8 @@ func _ready() -> void:
 
 # _input 先于 GUI 焦点导航执行，方向键不会被按钮抢焦点干扰
 func _input(event: InputEvent) -> void:
+	if settings_menu.visible or level_select.visible:
+		return  # 子界面开着时不喂秘技计数（方向键用于导航界面）
 	if event is InputEventKey and event.pressed and not event.echo:
 		_feed_cheat(_key_token(event))
 
@@ -195,7 +199,11 @@ func _process(_delta: float) -> void:
 	camera.position.y = 1.5 + sin(t * 0.3) * 0.015
 
 func _on_start() -> void:
-	get_tree().change_scene_to_file("res://main/main.tscn")
+	# 开始 → 打开关卡选择（自选关卡 / 继续进度 / 从头开始）
+	level_select.open()
+
+func _on_level_select_closed() -> void:
+	start_button.grab_focus()
 
 func _on_settings() -> void:
 	settings_menu.open()

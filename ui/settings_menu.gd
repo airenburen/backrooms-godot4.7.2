@@ -48,6 +48,7 @@ func open() -> void:
 	back_button.grab_focus()
 
 func close() -> void:
+	# 统一在此落盘：滑条拖动不写磁盘（此前音量每帧写一次，灵敏度/FOV 却不存，行为分裂）
 	GameState.save_settings()
 	visible = false
 	closed.emit()
@@ -83,39 +84,32 @@ func _on_fov_changed(value: float) -> void:
 func _on_volume_changed(value: float) -> void:
 	GameState.master_volume = value
 	GameState.apply_settings()
-	GameState.save_settings()
 	_update_labels()
 
 func _on_fullscreen_toggled(pressed: bool) -> void:
 	GameState.fullscreen = pressed
 	GameState.apply_settings()
-	GameState.save_settings()
 
 func _on_volumetric_toggled(pressed: bool) -> void:
 	GameState.volumetric_light = pressed
 	GameState.settings_changed.emit()
-	GameState.save_settings()
 
 func _on_dust_toggled(pressed: bool) -> void:
 	GameState.dust_particles = pressed
 	GameState.settings_changed.emit()
-	GameState.save_settings()
 
 func _on_aa_selected(index: int) -> void:
 	GameState.anti_aliasing_mode = index
 	GameState.apply_anti_aliasing()
-	GameState.save_settings()
 
 func _on_ssao_toggled(pressed: bool) -> void:
 	GameState.ssao_enabled = pressed
 	ssao_quality_option.disabled = not pressed
 	GameState.settings_changed.emit()
-	GameState.save_settings()
 
 func _on_ssao_quality_selected(index: int) -> void:
 	GameState.ssao_quality = index
 	GameState.settings_changed.emit()
-	GameState.save_settings()
 
 func _on_back() -> void:
 	close()

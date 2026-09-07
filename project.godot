@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 GameState="*res://autoload/game_state.gd"
+Loader="*res://autoload/loader.gd"
 
 [display]
 

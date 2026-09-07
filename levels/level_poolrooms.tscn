@@ -1,0 +1,37 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://levels/level_poolrooms.gd" id="1_script"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
+sky_top_color = Color(0.55, 0.7, 0.78, 1)
+sky_horizon_color = Color(0.7, 0.82, 0.88, 1)
+ground_bottom_color = Color(0.4, 0.55, 0.62, 1)
+ground_horizon_color = Color(0.65, 0.78, 0.84, 1)
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("SkyMat")
+
+[sub_resource type="Environment" id="Env_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+ambient_light_source = 3
+ambient_light_color = Color(0.5, 0.6, 0.65, 1)
+ambient_light_energy = 0.5
+fog_enabled = true
+fog_light_color = Color(0.6, 0.75, 0.8, 1)
+fog_density = 0.006
+fog_aerial_perspective = 0.0
+tonemap_mode = 3
+glow_enabled = true
+glow_intensity = 0.25
+glow_bloom = 0.08
+adjustment_enabled = true
+adjustment_brightness = 1.0
+adjustment_contrast = 1.05
+adjustment_saturation = 0.9
+
+[node name="LevelPoolrooms" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_1")

@@ -1,9 +1,20 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://ui/hud.gd" id="1_script"]
 
+[sub_resource type="Shader" id="Shader_vignette"]
+code = "shader_type canvas_item;\nuniform float vignette_strength : hint_range(0.0, 1.0) = 0.0;\nuniform float pulse : hint_range(0.0, 1.0) = 0.0;\nvoid fragment() {\n    vec2 uv = UV;\n    float dist = distance(uv, vec2(0.5));\n    float edge = smoothstep(0.25, 0.75, dist);\n    vec3 col = vec3(0.45, 0.0, 0.0);\n    float a = edge * vignette_strength * 0.85 + pulse * vignette_strength * 0.5;\n    COLOR = vec4(col, clamp(a, 0.0, 0.75));\n}"
+
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1_script")
+
+[node name="Vignette" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0)
+material = SubResource("Shader_vignette")
 
 [node name="Crosshair" type="ColorRect" parent="."]
 anchors_preset = 8
@@ -49,3 +60,47 @@ text = ""
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 18
 theme_override_colors/font_color = Color(0.9, 0.9, 0.8, 0.9)
+
+[node name="TaskPanel" type="VBoxContainer" parent="."]
+anchors_preset = 8
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -50.0
+offset_right = -20.0
+offset_bottom = 50.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="TaskTitle" type="Label" parent="TaskPanel"]
+layout_mode = 2
+text = "目标"
+horizontal_alignment = 2
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.65, 0.63, 0.5, 0.7)
+
+[node name="AlmondLabel" type="Label" parent="TaskPanel"]
+layout_mode = 2
+text = "杏仁水 0/3"
+horizontal_alignment = 2
+theme_override_font_sizes/font_size = 17
+theme_override_colors/font_color = Color(0.95, 0.88, 0.65, 0.9)
+
+[node name="PickupPrompt" type="Label" parent="."]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -150.0
+offset_top = -110.0
+offset_right = 150.0
+offset_bottom = -80.0
+grow_horizontal = 2
+grow_vertical = 0
+text = ""
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(0.9, 0.9, 0.8, 0.95)

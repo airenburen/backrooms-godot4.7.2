@@ -7,16 +7,17 @@ extends RefCounted
 # - sky_affect = 0：全封闭地图，跳过天空与雾的混合
 # - 开关来自 GameState.volumetric_light；关闭时 froxel pass 整体不执行
 
-static func configure(env: Environment) -> void:
+# 各关卡的体积雾密度不同（L2 管道层最浓、泳室几乎无），density/length 由关卡传入
+static func configure(env: Environment, density := 0.02, length := 40.0) -> void:
 	if env == null:
 		return
 	env.volumetric_fog_enabled = GameState.volumetric_light
-	env.volumetric_fog_density = 0.02
+	env.volumetric_fog_density = density
 	env.volumetric_fog_albedo = Color(0.9, 0.85, 0.68)
 	env.volumetric_fog_emission = Color(0.045, 0.04, 0.025)
 	env.volumetric_fog_emission_energy = 0.4
 	env.volumetric_fog_anisotropy = 0.3
-	env.volumetric_fog_length = 40.0
+	env.volumetric_fog_length = length
 	env.volumetric_fog_detail_spread = 2.0
 	env.volumetric_fog_gi_inject = 0.0
 	env.volumetric_fog_ambient_inject = 0.0
@@ -27,26 +28,28 @@ static func configure(env: Environment) -> void:
 
 # SSAO 环境光遮蔽：让墙脚/柱基/地标背后有接触阴影，空间层次感↑
 # Forward+ 专属；三档质量（低/中/高），低档半径小、强度弱，高档细节更多
+# 可见性关键：本作场景几乎全靠直射灯照明（环境光仅 0.4 能量暗色），
+# light_affect 太低时 AO 只压暗那一丁点环境光，视觉上等于关闭。
 static func _configure_ssao(env: Environment) -> void:
 	env.ssao_enabled = GameState.ssao_enabled
 	match GameState.ssao_quality:
 		0:  # 低
-			env.ssao_radius = 0.7
-			env.ssao_intensity = 1.4
-			env.ssao_power = 1.4
+			env.ssao_radius = 0.8
+			env.ssao_intensity = 2.4
+			env.ssao_power = 1.5
 			env.ssao_detail = 0.3
 		2:  # 高
 			env.ssao_radius = 1.5
-			env.ssao_intensity = 2.4
-			env.ssao_power = 1.6
+			env.ssao_intensity = 4.0
+			env.ssao_power = 1.8
 			env.ssao_detail = 0.8
 		_:  # 中
-			env.ssao_radius = 1.0
-			env.ssao_intensity = 1.8
-			env.ssao_power = 1.5
+			env.ssao_radius = 1.1
+			env.ssao_intensity = 3.2
+			env.ssao_power = 1.6
 			env.ssao_detail = 0.5
-	# 灯光直射区也保留一点遮蔽，避免灯下墙角完全平
-	env.ssao_light_affect = 0.15
+	# 直射光主导的场景里这是主旋钮：0.15 时墙脚只暗 ~10%（肉眼不可见）
+	env.ssao_light_affect = 0.5
 
 # 让一盏灯对体积雾的贡献强度（0 = 该灯不参与体积计算，最省）
 static func set_fog_energy(light: Light3D, energy: float) -> void:

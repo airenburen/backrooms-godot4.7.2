@@ -44,6 +44,7 @@ var flashlight_drain_rate: float = 2.0
 var click_audio: AudioStreamPlayer
 
 func _ready() -> void:
+	add_to_group("player")
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	flashlight.visible = false
 	camera.fov = GameState.fov
@@ -120,6 +121,8 @@ func _physics_process(delta: float) -> void:
 		# 空中不受地面阻尼影响，保留动量，仅按输入做切向加速（strafe）
 		if direction:
 			_air_accelerate(direction.normalized(), BHOP_AIR_ACCEL * delta)
+		# 连跳也累计步伐节奏：否则 head_bob_time 停走，落地帧触发不了脚步声（无声疾行）
+		head_bob_time += delta * HEAD_BOB_FREQUENCY * (Vector2(velocity.x, velocity.z).length() / WALK_SPEED)
 	elif direction:
 		velocity.x = lerpf(velocity.x, direction.x * current_speed, ACCELERATION * delta)
 		velocity.z = lerpf(velocity.z, direction.z * current_speed, ACCELERATION * delta)

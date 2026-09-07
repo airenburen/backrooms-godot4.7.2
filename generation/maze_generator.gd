@@ -12,6 +12,22 @@ var height: int
 var dist: PackedInt32Array
 # 开阔区柱体格索引（用于渲染时套独立材质）
 var pillar_cells := {}
+# _carve_rooms 开凿的格子索引（子类关卡可据此布置家具，如仓库货箱）
+var room_cells := {}
+# _carve_rooms 开凿的房间矩形（格子坐标，供 L1 货架等按房间布局的装修用）
+var room_rects: Array[Rect2i] = []
+
+# —— 生成参数（各关卡可调，generate 前设置）——
+# 额外环路：打通死墙的概率（0=纯迷宫，越高越"无限回廊"）
+var loop_wall_chance := 0.14
+var loop_pillar_chance := 0.06
+# 死端编织概率：打掉死胡同尽头墙的概率
+var braid_chance := 0.4
+# 随机房间数/尺寸范围
+var room_count_min := 3
+var room_count_max := 5
+var room_size_min := 2
+var room_size_max := 5
 
 func generate(maze_size: int, seed_value: int = -1) -> void:
 	if seed_value >= 0:
@@ -21,6 +37,9 @@ func generate(maze_size: int, seed_value: int = -1) -> void:
 	grid = PackedByteArray()
 	grid.resize(width * height)
 	grid.fill(Cell.WALL)
+	pillar_cells.clear()
+	room_cells.clear()
+	room_rects.clear()
 	_carve_maze()
 	_add_loops()
 	_carve_rooms()
@@ -75,8 +94,6 @@ func _get_unvisited_neighbors(cell: Vector2i) -> Array[Vector2i]:
 	return result
 
 func _add_loops() -> void:
-	var wall_chance := 0.14
-	var pillar_chance := 0.06
 	for y in range(1, height - 1):
 		for x in range(1, width - 1):
 			if grid[_index(x, y)] != Cell.WALL:
@@ -84,30 +101,35 @@ func _add_loops() -> void:
 			var x_even := (x % 2 == 0)
 			var y_even := (y % 2 == 0)
 			if x_even and not y_even:
-				if is_floor(x - 1, y) and is_floor(x + 1, y) and randf() < wall_chance:
+				if is_floor(x - 1, y) and is_floor(x + 1, y) and randf() < loop_wall_chance:
 					grid[_index(x, y)] = Cell.FLOOR
 			elif not x_even and y_even:
-				if is_floor(x, y - 1) and is_floor(x, y + 1) and randf() < wall_chance:
+				if is_floor(x, y - 1) and is_floor(x, y + 1) and randf() < loop_wall_chance:
 					grid[_index(x, y)] = Cell.FLOOR
 			elif x_even and y_even:
-				if randf() < pillar_chance:
+				# 仅在邻接已有走廊时开格：孤立开格会形成四面围墙的 pocket，
+				# 触发 _sprinkle_pillars 的连通性校验 → 全部柱体被连坐撤销
+				if randf() < loop_pillar_chance and (is_floor(x - 1, y) or is_floor(x + 1, y) \
+						or is_floor(x, y - 1) or is_floor(x, y + 1)):
 					grid[_index(x, y)] = Cell.FLOOR
 
 # 在迷宫中随机开凿若干矩形房间，打破单一走廊结构，形成开阔大厅
 func _carve_rooms() -> void:
-	var room_count := randi_range(3, 5)
+	var room_count := randi_range(room_count_min, room_count_max)
 	for _i in room_count:
-		var rw := randi_range(2, 5)   # 房间宽（格）
-		var rh := randi_range(2, 5)   # 房间高（格）
+		var rw := randi_range(room_size_min, room_size_max)   # 房间宽（格）
+		var rh := randi_range(room_size_min, room_size_max)   # 房间高（格）
 		# 对齐到奇数坐标，保证房间边界落在走廊格上
 		var rx := (randi_range(1, max(1, (width - rw - 1) / 2)) * 2) + 1
 		var ry := (randi_range(1, max(1, (height - rh - 1) / 2)) * 2) + 1
 		if rx + rw > width - 1 or ry + rh > height - 1:
 			continue
+		room_rects.append(Rect2i(rx, ry, rw, rh))
 		for y in range(ry, ry + rh):
 			for x in range(rx, rx + rw):
 				if x > 0 and y > 0 and x < width - 1 and y < height - 1:
 					grid[_index(x, y)] = Cell.FLOOR
+					room_cells[_index(x, y)] = true
 
 # 死端编织：打掉大部分死胡同尽头的墙，形成"无限回廊"的循环感（后室标志性体验）
 func _braid_dead_ends() -> void:
@@ -123,7 +145,7 @@ func _braid_dead_ends() -> void:
 			if openings == 1:
 				dead_ends.append(Vector2i(x, y))
 	for cell in dead_ends:
-		if randf() >= 0.6:
+		if randf() >= braid_chance:
 			continue
 		var candidates: Array[Vector2i] = []
 		for dir in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:

@@ -1,224 +1,139 @@
-extends Node3D
+extends "res://levels/level_base.gd"
+# Level 0：经典黄色迷宫重做（见 docs/level0_design.md）。
+# 房间簇 + 方形门洞（Level0Generator）；掉格吊顶 + 嵌入式灯板三态
+# （常亮/闪烁/熄灭）；踢脚线；mono-yellow 三色带；墙皮撕裂露水泥；
+# 靠墙装饰梯子；黑暗洞口出口（替换绿光 EXIT 面板）。
 
-const FlickeringLight = preload("res://generation/flickering_light.gd")
-const SoundGen = preload("res://generation/sound_generator.gd")
-const Landmark = preload("res://generation/landmark_breadcrumb.gd")
-const MatLib = preload("res://generation/material_lib.gd")
-const DustField = preload("res://generation/dust_field.gd")
-const Atmosphere = preload("res://generation/atmosphere.gd")
+const Level0Generator = preload("res://levels/level0_generator.gd")
 
-const CELL_SIZE := 4.0
-const WALL_HEIGHT := 3.0
-const MAZE_SIZE := 11
-const LIGHT_RANGE := 10.0
-const FLICKER_CHANCE := 0.12
-# 薄墙厚度：走廊两侧不再使用 4m 实心块，而是真实隔墙
-const WALL_THICK := 0.28
-const DIRS4: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-# 弱引导：沿通往出口的路，每隔 N 格放一个吸引性地标（不用箭头，间隔故意放大以保持“弱”）
-const GUIDE_STEP := 7
+var _zone_mats: Array[StandardMaterial3D] = []
+var _dead_panel_mat: StandardMaterial3D
+var _cement_mat: StandardMaterial3D
+var _wood_mat: StandardMaterial3D
+var _baseboard_mat: StandardMaterial3D
+var _switch_mat: StandardMaterial3D
+var _dark_exit_mat: StandardMaterial3D
+var _exit_glow_mat: StandardMaterial3D
 
-const MazeGenerator = preload("res://generation/maze_generator.gd")
-var maze
-var exit_area: Area3D
-var exit_cell: Vector2i
-var spawn_cell: Vector2i
+func _init() -> void:
+	# 材质/雾/音效仍用基类默认（就是经典黄墙那套），只覆盖布局相关参数
+	maze_size = 12                        # 25×25 格房间簇（装得下 8~14 个房间）
+	light_range = 8.5                     # 房间多，灯更碎
+	light_panel_size = Vector2(0.6, 1.2)  # 2×4 英尺格栅灯
+	flicker_chance = 0.30
 
-var _wall_mat: StandardMaterial3D
-var _floor_mat: StandardMaterial3D
-var _ceiling_mat: StandardMaterial3D
-var _pillar_mat: StandardMaterial3D
-var _light_panel_mat: StandardMaterial3D
-var _exit_portal_mat: StandardMaterial3D
-
-func _ready() -> void:
-	_create_materials()
-	_setup_atmosphere()
-	GameState.settings_changed.connect(_on_settings_changed)
-	maze = MazeGenerator.new()
-	maze.generate(MAZE_SIZE, randi())
-	_build_floor_and_ceiling()
-	_build_walls()
-	_place_lights()
-	_add_ambient_fill_light()
-	_position_player()
-	_place_exit()
-	_place_landmarks(spawn_cell)
-	_add_dust_field()
-	_play_ambient_hum()
-	GameState.show_hint("Level 0 - 找到出口")
-
-func _setup_atmosphere() -> void:
-	var world_env := get_node_or_null("WorldEnvironment") as WorldEnvironment
-	if world_env:
-		Atmosphere.configure(world_env.environment)
-
-func _add_dust_field() -> void:
-	var dust := DustField.new()
-	dust.name = "DustField"
-	var player := get_node_or_null("../Player")
-	dust.setup(player, 700, Vector3(14, 1.7, 14))
-	dust.visible = GameState.dust_particles
-	add_child(dust)
-
-func _on_settings_changed() -> void:
-	var world_env := get_node_or_null("WorldEnvironment") as WorldEnvironment
-	if world_env:
-		Atmosphere.configure(world_env.environment)
-	var dust := get_node_or_null("DustField")
-	if dust:
-		dust.visible = GameState.dust_particles
+func _generate_maze(m) -> void:
+	var g := Level0Generator.new()
+	g.generate(maze_size, randi())
+	maze = g
 
 func _create_materials() -> void:
-	_wall_mat = MatLib.wall_mat()
+	_zone_mats = MatLib.wall_zone_mats()
 	_floor_mat = MatLib.floor_mat()
-	_ceiling_mat = MatLib.ceiling_mat()
+	_ceiling_mat = MatLib.ceiling_grid_mat()
 	_pillar_mat = MatLib.pillar_mat()
+	_light_panel_mat = _make_light_panel_mat(Color(1, 1, 0.95), Color(1.0, 0.97, 0.88))
+	_exit_portal_mat = _make_exit_mat()
+	_dead_panel_mat = StandardMaterial3D.new()
+	_dead_panel_mat.albedo_color = Color(0.55, 0.54, 0.50)
+	_dead_panel_mat.roughness = 0.7
+	# 撕裂破洞的水泥基底：复用已有 Concrete030，压暗
+	_cement_mat = MatLib.make_mat("res://assets/textures/Concrete030/", "Concrete030_1K-JPG",
+		0.8, Color(0.38, 0.37, 0.35), Color(0.16, 0.16, 0.15), Color(0.34, 0.34, 0.33), 0.08, 0.3)
+	_wood_mat = StandardMaterial3D.new()
+	_wood_mat.albedo_color = Color(0.55, 0.42, 0.26)
+	_wood_mat.roughness = 0.85
+	_baseboard_mat = StandardMaterial3D.new()
+	_baseboard_mat.albedo_color = Color(0.35, 0.30, 0.20)
+	_baseboard_mat.roughness = 0.8
+	_switch_mat = StandardMaterial3D.new()
+	_switch_mat.albedo_color = Color(0.92, 0.91, 0.88)
+	_switch_mat.roughness = 0.4
+	_dark_exit_mat = StandardMaterial3D.new()
+	_dark_exit_mat.albedo_color = Color(0.02, 0.02, 0.02)
+	_dark_exit_mat.roughness = 1.0
+	_exit_glow_mat = StandardMaterial3D.new()
+	_exit_glow_mat.albedo_color = Color(0.25, 0.22, 0.12)
+	_exit_glow_mat.emission_enabled = true
+	_exit_glow_mat.emission = Color(0.45, 0.40, 0.22)
+	_exit_glow_mat.emission_energy_multiplier = 0.3
 
-	_light_panel_mat = StandardMaterial3D.new()
-	_light_panel_mat.albedo_color = Color(1, 1, 0.95)
-	_light_panel_mat.emission_enabled = true
-	_light_panel_mat.emission = Color(1.0, 0.95, 0.8)
-	_light_panel_mat.emission_energy_multiplier = 2.0
+# ── 墙面：色区 tint + 踢脚线 + 撕裂破洞 + 开关插座 ──────────
 
-	_exit_portal_mat = StandardMaterial3D.new()
-	_exit_portal_mat.albedo_color = Color(0.0, 0.4, 0.1)
-	_exit_portal_mat.emission_enabled = true
-	_exit_portal_mat.emission = Color(0.1, 0.9, 0.3)
-	_exit_portal_mat.emission_energy_multiplier = 1.5
+# 覆盖：按墙段所在色区选壁纸 tint（mono-yellow 分区悄悄变调）
+func _emit_wall(container: Node3D, mat: StandardMaterial3D, horizontal: bool,
+		line: int, sgn: int, a: int, b: int) -> CSGBox3D:
+	var zone := int(floor(((a + b) * 0.5) / 7.0 + float(line) / 7.0)) % 3
+	var wall := super._emit_wall(container, _zone_mats[zone], horizontal, line, sgn, a, b)
+	_decorate_wall_face(container, zone, horizontal, line, sgn, a, b)
+	return wall
 
-func _play_ambient_hum() -> void:
-	var hum := AudioStreamPlayer.new()
-	hum.name = "AmbientHum"
-	hum.stream = SoundGen.create_ambient_hum()
-	hum.volume_db = -15.0
-	hum.autoplay = true
-	add_child(hum)
-	hum.play()
+func _decorate_wall_face(container: Node3D, zone: int, horizontal: bool,
+		line: int, sgn: int, a: int, b: int) -> void:
+	var span := float(b - a + 1) * cell_size
+	var along := (float(a) + float(b + 1)) * 0.5 * cell_size
+	var wall_c := float(line) * cell_size - float(sgn) * WALL_THICK * 0.5
+	var wall_face := wall_c + float(sgn) * WALL_THICK * 0.5  # 朝地板侧的墙面精确位置
+	var s := float(sgn)
 
-func _cell_to_world(cell: Vector2i) -> Vector3:
-	return Vector3(
-		cell.x * CELL_SIZE + CELL_SIZE * 0.5,
-		0.0,
-		cell.y * CELL_SIZE + CELL_SIZE * 0.5
-	)
-
-func _build_floor_and_ceiling() -> void:
-	var total_w: float = maze.width * CELL_SIZE
-	var total_d: float = maze.height * CELL_SIZE
-
-	var floor_node := CSGBox3D.new()
-	floor_node.name = "Floor"
-	floor_node.use_collision = true
-	floor_node.size = Vector3(total_w, 0.2, total_d)
-	floor_node.position = Vector3(total_w * 0.5, -0.1, total_d * 0.5)
-	floor_node.material = _floor_mat
-	add_child(floor_node)
-
-	var ceiling_node := CSGBox3D.new()
-	ceiling_node.name = "Ceiling"
-	ceiling_node.use_collision = true
-	ceiling_node.size = Vector3(total_w, 0.2, total_d)
-	ceiling_node.position = Vector3(total_w * 0.5, WALL_HEIGHT + 0.1, total_d * 0.5)
-	ceiling_node.material = _ceiling_mat
-	add_child(ceiling_node)
-
-func _build_walls() -> void:
-	var wall_container := Node3D.new()
-	wall_container.name = "Walls"
-	add_child(wall_container)
-	_build_thin_walls(wall_container)
-	_build_pillars(wall_container)
-
-# 薄墙：不再逐格堆 4m 实心块，而是收集每个 WALL 格面向 FLOOR 的边，
-# 将同一条线上连续的边合并成整段隔墙，转角处端头外扩半厚以闭合缝隙。
-# 开阔区柱体（pillar_cells）除外——它们是四面通透的独立柱子，单独处理。
-func _build_thin_walls(container: Node3D) -> void:
-	# h_faces[网格线][方向符号] -> { 格子坐标: true }（水平边，沿 X 延伸）；v_faces 同理
-	var h_faces := {}
-	var v_faces := {}
-	for y in maze.height:
-		for x in maze.width:
-			if not maze.is_wall(x, y):
-				continue
-			if maze.pillar_cells.has(maze._index(x, y)):
-				continue
-			for dir in DIRS4:
-				var nx: int = x + dir.x
-				var ny: int = y + dir.y
-				if not maze.is_floor(nx, ny):
-					continue
-				if dir.y != 0:
-					var line: int = y + (1 if dir.y > 0 else 0)
-					if not h_faces.has(line):
-						h_faces[line] = {}
-					if not h_faces[line].has(dir.y):
-						h_faces[line][dir.y] = {}
-					h_faces[line][dir.y][x] = true
-				else:
-					var vline: int = x + (1 if dir.x > 0 else 0)
-					if not v_faces.has(vline):
-						v_faces[vline] = {}
-					if not v_faces[vline].has(dir.x):
-						v_faces[vline][dir.x] = {}
-					v_faces[vline][dir.x][y] = true
-
-	for line in h_faces:
-		for sgn in h_faces[line]:
-			_add_merged_wall_runs(container, h_faces[line][sgn], line, sgn, true, _wall_mat)
-	for line in v_faces:
-		for sgn in v_faces[line]:
-			_add_merged_wall_runs(container, v_faces[line][sgn], line, sgn, false, _wall_mat)
-
-# 开阔区柱体：在每个柱体格中心放一根居中的小方柱（带倒角感）
-func _build_pillars(container: Node3D) -> void:
-	for idx in maze.pillar_cells:
-		var x: int = idx % maze.width
-		var y: int = int(idx / maze.width)
-		var pillar := CSGBox3D.new()
-		pillar.use_collision = true
-		pillar.size = Vector3(1.2, WALL_HEIGHT + 0.2, 1.2)
-		pillar.position = Vector3(
-			x * CELL_SIZE + CELL_SIZE * 0.5,
-			WALL_HEIGHT * 0.5,
-			y * CELL_SIZE + CELL_SIZE * 0.5
-		)
-		pillar.material = _pillar_mat
-		container.add_child(pillar)
-
-# 把一条线上连续格子的边合并成长墙段。horizontal=true 时沿 X 延伸。
-func _add_merged_wall_runs(container: Node3D, cells: Dictionary, line: int, sgn: int, horizontal: bool, mat: StandardMaterial3D) -> void:
-	var coords: Array = cells.keys()
-	coords.sort()
-	var run_start: int = coords[0]
-	var run_end: int = coords[0]
-	for i in range(1, coords.size() + 1):
-		if i < coords.size() and coords[i] == run_end + 1:
-			run_end = coords[i]
-			continue
-		_emit_wall(container, mat, horizontal, line, sgn, run_start, run_end)
-		if i < coords.size():
-			run_start = coords[i]
-			run_end = coords[i]
-
-func _emit_wall(container: Node3D, mat: StandardMaterial3D, horizontal: bool, line: int, sgn: int, a: int, b: int) -> void:
-	var span_cells: float = float(b - a + 1) * CELL_SIZE
-	var wall := CSGBox3D.new()
-	wall.use_collision = true
-	# 端头各外扩半厚，保证与垂直方向墙段在转角处重叠闭合
-	var length: float = span_cells + WALL_THICK
+	# 踢脚线：0.14m 高深色带，两端各缩 0.02m 防转角 z-fight
+	var bb := CSGBox3D.new()
+	bb.name = "Baseboard"
+	var bb_len := span - 0.04
 	if horizontal:
-		wall.size = Vector3(length, WALL_HEIGHT + 0.2, WALL_THICK)
-		var cx: float = (float(a) + float(b - a + 1) * 0.5) * CELL_SIZE
-		var cz: float = float(line) * CELL_SIZE - float(sgn) * WALL_THICK * 0.5
-		wall.position = Vector3(cx, WALL_HEIGHT * 0.5, cz)
+		bb.size = Vector3(bb_len, 0.14, 0.06)
+		bb.position = Vector3(along, 0.07, wall_face + s * 0.033)
 	else:
-		wall.size = Vector3(WALL_THICK, WALL_HEIGHT + 0.2, length)
-		var cz2: float = (float(a) + float(b - a + 1) * 0.5) * CELL_SIZE
-		var cx2: float = float(line) * CELL_SIZE - float(sgn) * WALL_THICK * 0.5
-		wall.position = Vector3(cx2, WALL_HEIGHT * 0.5, cz2)
-	wall.material = mat
-	container.add_child(wall)
+		bb.size = Vector3(0.06, 0.14, bb_len)
+		bb.position = Vector3(wall_face + s * 0.033, 0.07, along)
+	bb.material = _baseboard_mat
+	bb.use_collision = false
+	container.add_child(bb)
+
+	# 撕裂破洞（≥3 格长墙 8%）：水泥基底 + 翘起壁纸条
+	if span >= cell_size * 3.0 and randf() < 0.08:
+		var t := randf_range(0.15, 0.85)
+		var px := along - span * 0.5 + span * t
+		var hy := clampf(randf_range(1.4, 1.9), 0.65, wall_height - 0.65)
+		var patch := CSGBox3D.new()
+		patch.name = "TearPatch"
+		patch.size = Vector3(1.2, 1.0, 0.05) if horizontal else Vector3(0.05, 1.0, 1.2)
+		patch.position = Vector3(px, hy, wall_face + s * 0.028) if horizontal \
+				else Vector3(wall_face + s * 0.028, hy, px)
+		patch.material = _cement_mat
+		patch.use_collision = false
+		container.add_child(patch)
+		var strips := randi_range(3, 5)
+		for _k in strips:
+			var strip := CSGBox3D.new()
+			strip.name = "PeelStrip"
+			strip.size = Vector3(randf_range(0.12, 0.22), randf_range(0.5, 0.9), 0.02)
+			var ox := randf_range(-0.55, 0.55)
+			var oy := randf_range(-0.45, 0.45)
+			if horizontal:
+				strip.position = Vector3(px + ox, hy + oy, wall_face + s * 0.05)
+				strip.rotation = Vector3(s * randf_range(0.25, 0.5), randf_range(-0.6, 0.6), 0)
+			else:
+				strip.position = Vector3(wall_face + s * 0.05, hy + oy, px + ox)
+				strip.rotation = Vector3(0, randf_range(-0.6, 0.6), -s * randf_range(0.25, 0.5))
+			strip.material = _zone_mats[zone]
+			strip.use_collision = false
+			container.add_child(strip)
+
+	# 墙面开关（≥2 格墙 30%）
+	if span >= cell_size * 2.0 and randf() < 0.3:
+		var sw := CSGBox3D.new()
+		sw.name = "WallSwitch"
+		var st := randf_range(0.1, 0.9)
+		var sx := along - span * 0.5 + span * st
+		sw.size = Vector3(0.09, 0.13, 0.03)
+		sw.position = Vector3(sx, 1.1, wall_face + s * 0.017) if horizontal \
+				else Vector3(wall_face + s * 0.017, 1.1, sx)
+		sw.material = _switch_mat
+		sw.use_collision = false
+		container.add_child(sw)
+
+# ── 灯光：嵌入格栅的灯板三态（常亮/闪烁/熄灭）───────────────
 
 func _place_lights() -> void:
 	var light_container := Node3D.new()
@@ -227,178 +142,167 @@ func _place_lights() -> void:
 
 	var floor_cells: Array[Vector2i] = maze.get_all_floor_cells()
 	var covered := {}
-	var range_in_cells: float = LIGHT_RANGE * 0.8 / CELL_SIZE
-	var light_positions: Array[Vector2i] = []
-
+	var range_in_cells: float = light_range * 0.8 / cell_size
+	var positions: Array[Vector2i] = []
 	for cell in floor_cells:
 		if covered.has(cell):
 			continue
-		light_positions.append(cell)
+		positions.append(cell)
 		for other in floor_cells:
 			if covered.has(other):
 				continue
-			var dist: float = Vector2(other.x - cell.x, other.y - cell.y).length()
-			if dist <= range_in_cells:
+			if Vector2(other.x - cell.x, other.y - cell.y).length() <= range_in_cells:
 				covered[other] = true
 
-	for cell_pos in light_positions:
-		var world_pos := _cell_to_world(cell_pos)
-		var is_flicker: bool = randf() < FLICKER_CHANCE
-
-		var light: OmniLight3D
-		if is_flicker:
-			light = FlickeringLight.new()
+	var panel_y := wall_height - 0.05  # 嵌平吊顶，不再悬吊
+	for cell_pos in positions:
+		var p := _cell_to_world(cell_pos)
+		var roll := randf()
+		if roll < 0.15:
+			# 熄灭：死面板，无光
+			_panel(light_container, p + Vector3(0, panel_y, 0), _dead_panel_mat)
+		elif roll < 0.45:
+			# 闪烁：灯光与面板自发光同步熄灭（sync_material）
+			var light := FlickeringLight.new()
+			light.light_color = light_color
+			light.light_energy = randf_range(light_energy_range.x, light_energy_range.y)
+			light.omni_range = light_range
+			light.omni_attenuation = 1.5
+			light.shadow_enabled = true
+			Atmosphere.set_fog_energy(light, 0.8)
+			light.position = p + Vector3(0, panel_y - 0.1, 0)
+			light_container.add_child(light)
+			var pm := (_light_panel_mat as StandardMaterial3D).duplicate()
+			_panel(light_container, p + Vector3(0, panel_y, 0), pm)
+			light.sync_material = pm
 		else:
-			light = OmniLight3D.new()
-		light.position = world_pos + Vector3(0, WALL_HEIGHT - 0.4, 0)
-		light.light_color = Color(1.0, 0.95, 0.8)
-		light.light_energy = randf_range(1.0, 1.5)
-		light.omni_range = LIGHT_RANGE
-		light.omni_attenuation = 1.5
-		light.shadow_enabled = true
-		Atmosphere.set_fog_energy(light, 0.8)
-		light_container.add_child(light)
+			# 常亮
+			var light2 := OmniLight3D.new()
+			light2.light_color = light_color
+			light2.light_energy = randf_range(light_energy_range.x, light_energy_range.y)
+			light2.omni_range = light_range
+			light2.omni_attenuation = 1.5
+			light2.shadow_enabled = true
+			Atmosphere.set_fog_energy(light2, 0.8)
+			light2.position = p + Vector3(0, panel_y - 0.1, 0)
+			light_container.add_child(light2)
+			_panel(light_container, p + Vector3(0, panel_y, 0), _light_panel_mat)
 
-		var panel := CSGBox3D.new()
-		panel.size = Vector3(1.8, 0.08, 0.6)
-		panel.position = Vector3(0, 0.25, 0)
-		panel.material = _light_panel_mat
-		panel.use_collision = false
-		light.add_child(panel)
+func _panel(container: Node3D, at: Vector3, mat: Material) -> void:
+	var panel := CSGBox3D.new()
+	panel.name = "Panel"
+	panel.size = Vector3(light_panel_size.x, 0.06, light_panel_size.y)
+	panel.position = at
+	panel.material = mat
+	panel.use_collision = false
+	container.add_child(panel)
 
-func _add_ambient_fill_light() -> void:
-	var fill_light := DirectionalLight3D.new()
-	fill_light.name = "AmbientFill"
-	fill_light.light_color = Color(0.35, 0.32, 0.22)
-	fill_light.light_energy = 0.18
-	fill_light.rotation_degrees = Vector3(-55, 25, 0)
-	fill_light.shadow_enabled = false
-	Atmosphere.set_fog_energy(fill_light, 0.0)  # 补光不参与体积雾，避免整体发灰
-	add_child(fill_light)
+# ── 装饰：靠墙梯子（纯环境叙事，不可攀爬）───────────────────
+
+func _custom_build() -> void:
+	var decor := Node3D.new()
+	decor.name = "Decor"
+	add_child(decor)
+	for rect in (maze as Level0Generator).rooms:
+		if randf() >= 0.15:
+			continue
+		for _try in 6:
+			var cell := Vector2i(randi_range(rect.position.x, rect.end.x - 1),
+					randi_range(rect.position.y, rect.end.y - 1))
+			if not maze.is_floor(cell.x, cell.y):
+				continue
+			var dirs := _wall_dirs_of(cell)
+			if dirs.is_empty():
+				continue
+			_build_ladder(decor, cell, dirs[randi() % dirs.size()])
+			break
+
+func _build_ladder(container: Node3D, cell: Vector2i, dir: Vector2i) -> void:
+	var ladder := Node3D.new()
+	ladder.name = "Ladder"
+	var base := _cell_to_world(cell)
+	var normal := Vector3(dir.x, 0, dir.y)
+	var tangent := Vector3(-dir.y, 0, dir.x)
+	# 墙面在格边界线上；梯子贴墙立着（出墙 7cm）
+	ladder.position = base + normal * (cell_size * 0.5 - 0.07)
+	ladder.rotation.y = atan2(tangent.x, tangent.z)
+	container.add_child(ladder)
+
+	var h := wall_height - 0.05  # 顶着吊顶（3.0m 层高，梯子 2.95m）
+	# 注意轴向：旋转后局部 X = 墙法线（厚度方向）、局部 Z = 墙切线（展开方向），
+	# 立柱间距和横档长度都要摆在 Z 上，摆在 X 上会整架戳进墙里
+	for side in [-0.225, 0.225]:
+		var post := CSGBox3D.new()
+		post.size = Vector3(0.05, h, 0.05)
+		post.position = Vector3(0, h * 0.5, side)
+		post.material = _wood_mat
+		post.use_collision = false
+		ladder.add_child(post)
+	for i in 6:
+		var rung := CSGBox3D.new()
+		rung.size = Vector3(0.05, 0.045, 0.5)
+		rung.position = Vector3(0, 0.42 + i * (h - 0.55) / 5.0, 0)
+		rung.material = _wood_mat
+		rung.use_collision = false
+		ladder.add_child(rung)
+
+# ── 出口：黑暗洞口（纯黑背板 + 暗黄微光内框，替换绿光面板）──
 
 func _place_exit() -> void:
-	# 出口选在距玩家最远的可贴门格，最大化探索路程
 	exit_cell = maze.find_farthest_floor(spawn_cell)
 	var world_pos := _cell_to_world(exit_cell)
 
-	# 传送门贴墙放置：找出口格相邻的墙格作为"背景墙"
 	var mount_dir := _exit_door_dir()
 
 	exit_area = Area3D.new()
 	exit_area.name = "ExitDoor"
-	var offset := Vector3(mount_dir.x, 0, mount_dir.y) * (CELL_SIZE * 0.5 - 0.2)
-	exit_area.position = world_pos + offset + Vector3(0, WALL_HEIGHT * 0.5, 0)
-	# 让传送门 -Z 朝向走廊内侧（玩家来向）
+	var offset := Vector3(mount_dir.x, 0, mount_dir.y) * (cell_size * 0.5 - 0.2)
+	exit_area.position = world_pos + offset + Vector3(0, wall_height * 0.5, 0)
 	if mount_dir != Vector2i.ZERO:
 		exit_area.rotation.y = atan2(float(mount_dir.x), float(mount_dir.y))
 
 	var col_shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(CELL_SIZE * 0.8, WALL_HEIGHT, CELL_SIZE * 0.8)
+	box.size = Vector3(cell_size * 0.8, wall_height, cell_size * 0.8)
 	col_shape.shape = box
 	exit_area.add_child(col_shape)
 
+	# 纯黑背板：一个"比夜色更黑"的洞口
 	var portal := CSGBox3D.new()
-	portal.size = Vector3(CELL_SIZE * 0.6, WALL_HEIGHT * 0.9, 0.15)
+	portal.size = Vector3(cell_size * 0.6, wall_height * 0.9, 0.15)
 	portal.position = Vector3(0, 0, 0.1)
-	portal.material = _exit_portal_mat
+	portal.material = _dark_exit_mat
 	portal.use_collision = false
 	exit_area.add_child(portal)
 
+	# 洞口内框：暗黄微光边条（暗示"里面有东西"而不是"这里有 UI"）
+	var pw := cell_size * 0.6
+	var ph := wall_height * 0.9
+	var strips := [
+		[Vector3(pw + 0.1, 0.06, 0.17), Vector3(0, ph * 0.5 + 0.02, 0.1)],
+		[Vector3(pw + 0.1, 0.06, 0.17), Vector3(0, -ph * 0.5 - 0.02, 0.1)],
+		[Vector3(0.06, ph + 0.1, 0.17), Vector3(-pw * 0.5 - 0.02, 0, 0.1)],
+		[Vector3(0.06, ph + 0.1, 0.17), Vector3(pw * 0.5 + 0.02, 0, 0.1)],
+	]
+	for s in strips:
+		var strip := CSGBox3D.new()
+		strip.size = s[0]
+		strip.position = s[1]
+		strip.material = _exit_glow_mat
+		strip.use_collision = false
+		exit_area.add_child(strip)
+
+	# EXIT 标牌：暗黄减半（可辨识性兜底）
 	var label := Label3D.new()
 	label.text = "EXIT"
 	label.font_size = 96
 	label.pixel_size = 0.004
 	label.double_sided = true
-	label.modulate = Color(0.2, 1.0, 0.3)
+	label.modulate = Color(0.8, 0.72, 0.45)
 	label.outline_size = 12
-	# 门板在 +Z（贴墙侧），EXIT 标签放 -Z（走廊侧），正面朝 -Z
-	label.position = Vector3(0, WALL_HEIGHT * 0.35, -0.3)
+	label.position = Vector3(0, wall_height * 0.35, -0.3)
 	exit_area.add_child(label)
 
 	add_child(exit_area)
 	exit_area.body_entered.connect(_on_exit_door_entered)
-	# 出口确定后构建 BFS 距离场，地标引导据此沿路放置
 	maze.compute_distance_field(exit_cell)
-
-# 追踪从 from_cell 沿梯度最短路到出口的格序列
-func _trace_path(from_cell: Vector2i) -> Array[Vector2i]:
-	var path: Array[Vector2i] = []
-	var cell := from_cell
-	var guard := 0
-	while guard < 4096:
-		guard += 1
-		path.append(cell)
-		var dir: Vector2i = maze.get_guidance_dir(cell)
-		if dir == Vector2i.ZERO:
-			break
-		cell += dir
-	return path
-
-# 沿通往出口的路放置吸引性地标（黑碑/门框/信标）。
-# 时机：① 三岔/四岔路口（最容易犹豫的地方，必放）② 直行段每 GUIDE_STEP 格兜底。
-# 仍保持"弱"：路口最少隔 3 格、直行大间隔、随机侧偏，不形成明显规律。
-func _place_landmarks(from_cell: Vector2i) -> void:
-	var container := Node3D.new()
-	container.name = "Landmarks"
-	add_child(container)
-
-	var path := _trace_path(from_cell)
-	if path.size() < 3:
-		return
-	var kind := randi() % 3
-	var since := GUIDE_STEP  # 从起点就开始计时，首个地标在 GUIDE_STEP 格后
-	for i in path.size():
-		# 起点附近与出口前一格不放（避开太显眼 / 不抢传送门的戏）
-		if i < 2 or i > path.size() - 2:
-			continue
-		var cell: Vector2i = path[i]
-		var is_junction := _opening_count(cell) >= 3
-		var due := since >= GUIDE_STEP or (is_junction and since >= 3)
-		if not due:
-			since += 1
-			continue
-		since = 0
-		var nxt: Vector2i = path[mini(i + 1, path.size() - 1)]
-		var facing: Vector2i = nxt - cell
-		if facing == Vector2i.ZERO:
-			facing = Vector2i(0, -1)
-		var marker := Landmark.create(kind, facing)
-		# 横向轻微偏移 + 随机角度，弱化到"像是环境本来就有"
-		var side := Vector2(facing.y, facing.x) * randf_range(0.2, 0.8)
-		if randf() < 0.5:
-			side = -side
-		marker.position = _cell_to_world(cell) + Vector3(side.x, 0, side.y)
-		container.add_child(marker)
-		kind = (kind + 1) % 3
-
-# 统计某格的开放方向数（≥3 即三岔/四岔路口）
-func _opening_count(cell: Vector2i) -> int:
-	var n := 0
-	for dir in DIRS4:
-		if maze.is_floor(cell.x + dir.x, cell.y + dir.y):
-			n += 1
-	return n
-
-# 出口格内指向门所在墙的方向
-func _exit_door_dir() -> Vector2i:
-	for dir in DIRS4:
-		if maze.is_wall(exit_cell.x + dir.x, exit_cell.y + dir.y):
-			return dir
-	return Vector2i.ZERO
-
-func _position_player() -> void:
-	spawn_cell = maze.find_nearest_floor(Vector2i(1, 1))
-	var spawn_pos := _cell_to_world(spawn_cell)
-
-	var player := get_node_or_null("../Player")
-	if player:
-		player.global_position = spawn_pos + Vector3(0, 1.0, 0)
-		player.rotation.y = atan2(-1, -1) + PI * 0.25
-
-func _on_exit_door_entered(body: Node3D) -> void:
-	if body is CharacterBody3D:
-		GameState.show_hint("你找到了出口...")
-		exit_area.set_deferred("monitoring", false)
-		await get_tree().create_timer(2.0).timeout
-		get_tree().reload_current_scene()

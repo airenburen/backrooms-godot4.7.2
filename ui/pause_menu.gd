@@ -53,14 +53,14 @@ func _on_restart() -> void:
 	get_tree().paused = false
 	visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	get_tree().reload_current_scene()
+	Loader.go_to("res://main/main.tscn")
 
 func _on_main_menu() -> void:
 	get_tree().paused = false
 	visible = false
 	# 回主菜单保持鼠标可见（主菜单 _ready 也会再设一次，这里防中间帧闪烁）
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	get_tree().change_scene_to_file("res://main/main_menu.tscn")
+	Loader.go_to("res://main/main_menu.tscn")
 
 func _on_quit() -> void:
 	get_tree().paused = false
