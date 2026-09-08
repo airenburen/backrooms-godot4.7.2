@@ -158,13 +158,14 @@ const POOL_WALL_DIR := "res://assets/textures/Tiles018/"
 const POOL_FLOOR_DIR := "res://assets/textures/Tiles008/"
 
 static func pool_wall_mat() -> StandardMaterial3D:
-	return make_mat(POOL_WALL_DIR, "Tiles018_1K-JPG", 0.8, Color(0.94, 0.91, 0.82),
-		Color(0.78, 0.74, 0.62), Color(0.95, 0.92, 0.83), 0.02, 0.05, 0.2)
+	# v3 明亮暖阳：白瓷砖高反光（低粗糙），泛黄感压到最低
+	return make_mat(POOL_WALL_DIR, "Tiles018_1K-JPG", 0.8, Color(0.97, 0.95, 0.90),
+		Color(0.80, 0.79, 0.75), Color(0.97, 0.96, 0.92), 0.02, 0.05, 0.18)
 
 static func pool_floor_mat() -> StandardMaterial3D:
-	# 经典 Level 37：全域暖奶油瓷砖，地面比墙面略深略毛
-	return make_mat(POOL_WALL_DIR, "Tiles018_1K-JPG", 0.8, Color(0.88, 0.84, 0.72),
-		Color(0.62, 0.58, 0.46), Color(0.86, 0.82, 0.71), 0.03, 0.08, 0.3)
+	# v3：走道/浅台/池底同一套白瓷砖，地面比墙面略毛防滑
+	return make_mat(POOL_WALL_DIR, "Tiles018_1K-JPG", 0.8, Color(0.90, 0.89, 0.85),
+		Color(0.72, 0.71, 0.67), Color(0.92, 0.91, 0.87), 0.03, 0.08, 0.28)
 
 # 防水格栅吊顶：冷白方格板（复用 L0 ceiling_grid_mat 思路，更亮格线更细）
 static func pool_ceiling_grid_mat() -> StandardMaterial3D:
@@ -205,8 +206,10 @@ void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
-// 经典焦散近似：迭代旋转坐标 + 距离场，得到游动的亮网
+// 经典焦散近似：迭代旋转坐标 + 距离场，得到游动的亮网。
+// 输入先 mod 回 TAU 周期再减 250（原版魔数窗口）——大坐标直接迭代会发散成全白
 float caustic(vec2 p, float t) {
+	p = mod(p, 6.28318530718) - 250.0;
 	vec2 i = p;
 	float c = 1.0;
 	float inten = 0.005;
@@ -223,7 +226,7 @@ float caustic(vec2 p, float t) {
 void fragment() {
 	vec2 uv = world_pos.xz / meters_per_tile;
 	vec3 base = texture(albedo_tex, uv).rgb;
-	float ca = caustic(world_pos.xz * 0.55, TIME * 0.5) * caustics_strength;
+	float ca = caustic(world_pos.xz, TIME * 0.5) * caustics_strength;
 	// 亮网处提亮 + 青绿 tint + 降低粗糙度（像被水波聚焦的光）
 	ALBEDO = base * (1.0 + ca * vec3(0.75, 1.0, 0.92));
 	ROUGHNESS = clamp(0.3 - ca * 0.25, 0.03, 1.0);
@@ -245,6 +248,47 @@ static func caustics_mat() -> ShaderMaterial:
 		albedo = ImageTexture.create_from_image(img)
 	m.set_shader_parameter("albedo_tex", albedo)
 	m.set_shader_parameter("meters_per_tile", 1.25)
+	return m
+
+# 顶面焦散光网（additive 发光）：泳池盆正上方的天花上投一层游动的阳光光斑网，
+# 纯 emission 动画、不吃光照不写深度；配朝下的 MeshInstance quad 用（不占 CSG 预算）
+static func caustics_glow_mat() -> ShaderMaterial:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode blend_add, unshaded, depth_draw_never, cull_back;
+
+uniform float strength = 0.55;
+
+varying vec3 world_pos;
+
+void vertex() {
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
+float caustic(vec2 p, float t) {
+	p = mod(p, 6.28318530718) - 250.0;
+	vec2 i = p;
+	float c = 1.0;
+	float inten = 0.005;
+	for (int n = 0; n < 3; n++) {
+		float tt = t * (1.0 - (3.5 / float(n + 1)));
+		i = p + vec2(cos(tt - i.x) + sin(tt + i.y), sin(tt - i.y) + cos(tt + i.x));
+		c += 1.0 / length(vec2(p.x / (sin(i.x + tt) / inten), p.y / (cos(i.y + tt) / inten)));
+	}
+	c /= 3.0;
+	c = 1.17 - pow(c, 1.4);
+	return clamp(pow(abs(c), 7.0), 0.0, 2.5);
+}
+
+void fragment() {
+	float ca = caustic(world_pos.xz, TIME * 0.5);
+	EMISSION = vec3(1.0, 0.96, 0.86) * ca * strength;
+	ALPHA = clamp(ca * strength, 0.0, 1.0);
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
 	return m
 
 # ── Level ! 红色狂奔（锈蚀金属板，复用 L1 顶棚贴图）──────────

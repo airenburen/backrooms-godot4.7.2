@@ -1,13 +1,33 @@
 class_name PoolroomsGenerator
 extends MazeGenerator
-# 泳室生成器：撒若干矩形"大厅"（互不重叠、留 3 格间隙）再用 2 格宽通道连通成一体。
-# 大厅不重叠是硬约束：上层厅台地 / 拱券门套 / 深水池都按大厅矩形落位，
-# 重叠会让台地悬在别家水池上、拱券飘在开阔地里（见 docs/level_poolrooms_design.md §3.8）。
-# 输出结构完全兼容 MazeGenerator（grid/pillar_cells/距离场/寻路），
-# 所以基类的墙体/出口/地标流程无需改动即可装配。
-# halls 记录每个大厅的格矩形（关卡据此铺水面/台地/拱券）。
+# 泳池关生成器 v2「舱室图 + 深度图层」（docs/level_poolrooms_design.md）：
+# ① 撒 6~9 个 10~16 格见方的池舱（间隙 ≥3 格），舱内凿 FLOOR
+# ② 相邻舱用 4~6 格宽的直通桥连接（Prim 生成树 + 1~2 条环路），废除 2 格窄通道
+# ③ 每舱内缩 2 格凿下沉池盆：盆缘一圈阳光浅台（-0.35），盆心深水（-1.2）
+# grid 仍是 WALL/FLOOR 二值，MazeGenerator 的 BFS/距离场/贴墙判定零改动；
+# depth/basins/col_cells/bridges 是 grid 之上的图层，关卡据此铺地板/水/柱/拱。
 
-var halls: Array[Rect2i] = []
+var halls: Array[Rect2i] = []        # 池舱矩形（格）
+var basins: Array[Rect2i] = []       # 下沉池盆矩形（格）
+var bridges: Array[Rect2i] = []      # 舱间直通桥（拱立在桥带中线上）
+var col_cells := {}                  # 池中柱格索引（grid 仍 FLOOR，柱由关卡渲染）
+var depth: PackedInt32Array          # 每格深度级：0 走道 / 1 浅台 / 2 深水
+
+const SHELF_DEPTH := 1
+const DEEP_DEPTH := 2
+const DECK_INSET := 2   # 池盆距舱墙的干走道宽（格）
+
+func depth_at(cell: Vector2i) -> int:
+	if depth.is_empty() or cell.x < 0 or cell.y < 0 or cell.x >= width or cell.y >= height:
+		return 0
+	return depth[_index(cell.x, cell.y)]
+
+func is_bridge_cell(x: int, y: int) -> bool:
+	# 水平桥带可能与舱的北/南边界行重叠横穿（.gallery 分段据此排除桥格）
+	for b in bridges:
+		if x >= b.position.x and x < b.end.x and y >= b.position.y and y < b.end.y:
+			return true
+	return false
 
 func generate(maze_size: int, seed_value: int = -1) -> void:
 	if seed_value >= 0:
@@ -21,22 +41,26 @@ func generate(maze_size: int, seed_value: int = -1) -> void:
 	room_cells.clear()
 	dist = PackedInt32Array()
 	halls = []
+	basins = []
+	bridges = []
+	col_cells = {}
+	depth = PackedInt32Array()
+	depth.resize(width * height)
 
-	# 大厅 8~14 格见方；放不下就逐级缩小再试，保证至少放下 4 个
-	var target_count := randi_range(6, 8)
+	# ① 撒舱：10~16 格见方、间隙 ≥3 格；放不下逐级缩，保底 2 个
+	var target_count := randi_range(6, 9)
 	var placed := 0
-	for size_base in [14, 12, 10, 8]:
+	for size_base in [16, 14, 12, 10]:
 		for _i in range(target_count * 2):
 			if placed >= target_count:
 				break
-			if halls.size() >= 4 and size_base <= 8:
+			if halls.size() >= 4 and size_base <= 10:
 				break
-			var hw := randi_range(maxi(8, size_base - 2), size_base)
-			var hh := randi_range(maxi(8, size_base - 2), size_base)
+			var hw := randi_range(maxi(10, size_base - 2), size_base)
+			var hh := randi_range(maxi(10, size_base - 2), size_base)
 			var hx := randi_range(1, width - hw - 2)
 			var hy := randi_range(1, height - hh - 2)
 			var rect := Rect2i(hx, hy, hw, hh)
-			# 间隙 3 格：通道 2 格 + 墙 1 格，互不打架
 			var margin := Rect2i(hx - 3, hy - 3, hw + 6, hh + 6)
 			var overlap := false
 			for other in halls:
@@ -49,36 +73,45 @@ func generate(maze_size: int, seed_value: int = -1) -> void:
 			placed += 1
 		if placed >= target_count:
 			break
-
-	# 兜底：一个都没放下（地图太小）——无间隙硬塞两个
 	while halls.size() < 2:
-		var hw := 8
-		var hh := 8
-		var hx := 1 + halls.size() * (hw + 1)
-		var hy := 1
-		if hx + hw >= width - 1:
-			hx = 1
-			hy = height - hh - 1
-		var rect := Rect2i(hx, hy, hw, hh)
+		var rect2 := Rect2i(1 + (halls.size() % 2) * (width - 12), 1, 10, 10)
 		var clash := false
 		for other in halls:
-			if rect.intersects(other):
+			if rect2.intersects(other):
 				clash = true
 				break
-		if not clash:
-			halls.append(rect)
-			placed += 1
-		else:
+		if clash:
 			break
+		halls.append(rect2)
 
+	# ② 舱内凿 FLOOR
 	for hall in halls:
 		_carve_rect(hall.position.x, hall.position.y, hall.size.x, hall.size.y)
 
+	# ③ 桥接：Prim 生成树 + 1~2 条环路；失败兜底全桥接
 	_connect_halls()
-	# 保险：万一连通失败（理论上不会），把所有大厅中心串一条总线兜底
+	_add_loop_bridges()
 	if not _is_fully_connected():
 		for i in range(1, halls.size()):
-			_carve_corridor(halls[0].get_center(), halls[i].get_center())
+			_carve_bridge(halls[0], halls[i])
+
+	# ④ 池盆：舱内缩 2 格；≥5×5 才成盆，否则该舱是旱厅
+	for hall in halls:
+		var inner := Rect2i(hall.position + Vector2i(DECK_INSET, DECK_INSET),
+				hall.size - Vector2i(DECK_INSET * 2, DECK_INSET * 2))
+		if inner.size.x < 5 or inner.size.y < 5:
+			continue
+		basins.append(inner)
+		for yy in range(inner.position.y, inner.end.y):
+			for xx in range(inner.position.x, inner.end.x):
+				var ring := mini(mini(xx - inner.position.x, inner.end.x - 1 - xx),
+						mini(yy - inner.position.y, inner.end.y - 1 - yy))
+				depth[_index(xx, yy)] = SHELF_DEPTH if ring == 0 else DEEP_DEPTH
+		# 池中柱网：3×3 格间距撒在深水区（ring≥1，避开盆缘浅台），神庙式柱林
+		for yy in range(inner.position.y + 1, inner.end.y - 1):
+			for xx in range(inner.position.x + 1, inner.end.x - 1):
+				if (xx - inner.position.x) % 3 == 1 and (yy - inner.position.y) % 3 == 1:
+					col_cells[_index(xx, yy)] = true
 
 func _carve_rect(x: int, y: int, w: int, h: int) -> void:
 	for yy in range(y, y + h):
@@ -86,9 +119,9 @@ func _carve_rect(x: int, y: int, w: int, h: int) -> void:
 			if xx > 0 and yy > 0 and xx < width - 1 and yy < height - 1:
 				grid[_index(xx, yy)] = Cell.FLOOR
 
-# 生成树连通：每次把"离已连通大厅最近"的一个大厅用 L 形通道接进来
+# Prim：每次把"离已连通集最近"的舱桥接进来（开阔直通桥，不再是窄通道）
 func _connect_halls() -> void:
-	if halls.is_empty():
+	if halls.size() < 2:
 		return
 	var connected := [0]
 	var remaining: Array[int] = []
@@ -105,27 +138,62 @@ func _connect_halls() -> void:
 					best_d = d
 					best_i = rem_i
 					best_from = from_idx
-		_carve_corridor(halls[best_from].get_center(), halls[best_i].get_center())
+		_carve_bridge(halls[best_from], halls[best_i])
 		connected.append(best_i)
 		remaining.erase(best_i)
 
-# L 形通道：先横后纵（随机顺序），每步凿 2×2 门洞
-func _carve_corridor(from: Vector2i, to: Vector2i) -> void:
-	var x := from.x
-	var y := from.y
-	var horizontal_first := randf() < 0.5
-	if horizontal_first:
-		while x != to.x:
-			_carve_rect(x, y, 2, 2)
-			x += signi(to.x - x)
-		while y != to.y:
-			_carve_rect(x, y, 2, 2)
-			y += signi(to.y - y)
+# 环路：随机再搭 1~2 座桥，避免纯树形布局
+func _add_loop_bridges() -> void:
+	if halls.size() < 4:
+		return
+	var pairs: Array = []
+	for i in halls.size():
+		for j in range(i + 1, halls.size()):
+			pairs.append(Vector2i(i, j))
+	pairs.shuffle()
+	var extra := randi_range(1, 2)
+	var made := 0
+	for p in pairs:
+		if made >= extra:
+			break
+		_carve_bridge(halls[p.x], halls[p.y])
+		made += 1
+
+# 两舱直连桥：沿两舱重叠的轴带凿 4~6 格宽直通开口（穿过中间的间隙墙）；
+# 对角舱（无重叠带）退化为宽 L 形，且不给拱
+func _carve_bridge(a: Rect2i, b: Rect2i) -> void:
+	var bw := randi_range(4, 6)
+	var x_overl := mini(a.end.x, b.end.x) - maxi(a.position.x, b.position.x)
+	var y_overl := mini(a.end.y, b.end.y) - maxi(a.position.y, b.position.y)
+	var options: Array[int] = []
+	if x_overl >= bw:
+		options.append(0)   # 垂直桥（沿 y 凿）
+	if y_overl >= bw:
+		options.append(1)   # 水平桥（沿 x 凿）
+	if options.is_empty():
+		_carve_wide_l(a, b, bw)
+		return
+	if options[randi() % options.size()] == 0:
+		var x0 := randi_range(maxi(a.position.x, b.position.x), mini(a.end.x, b.end.x) - bw)
+		var y0 := mini(a.end.y, b.end.y) - 1
+		var y1 := maxi(a.position.y, b.position.y) + 1
+		_carve_rect(x0, y0, bw, y1 - y0 + 1)
+		bridges.append(Rect2i(x0, y0, bw, y1 - y0 + 1))
 	else:
-		while y != to.y:
-			_carve_rect(x, y, 2, 2)
-			y += signi(to.y - y)
-		while x != to.x:
-			_carve_rect(x, y, 2, 2)
-			x += signi(to.x - x)
-	_carve_rect(to.x, to.y, 2, 2)
+		var y0 := randi_range(maxi(a.position.y, b.position.y), mini(a.end.y, b.end.y) - bw)
+		var x0 := mini(a.end.x, b.end.x) - 1
+		var x1 := maxi(a.position.x, b.position.x) + 1
+		_carve_rect(x0, y0, x1 - x0 + 1, bw)
+		bridges.append(Rect2i(x0, y0, x1 - x0 + 1, bw))
+
+# 对角舱兜底：4~6 格宽的 L 形桥（不记入 bridges，桥上无拱）
+func _carve_wide_l(a: Rect2i, b: Rect2i, w: int) -> void:
+	var ca := a.get_center()
+	var cb := b.get_center()
+	var half := w / 2
+	var x0 := mini(ca.x, cb.x) - half
+	var x1 := maxi(ca.x, cb.x) + half
+	var y0 := mini(ca.y, cb.y) - half
+	var y1 := maxi(ca.y, cb.y) + half
+	_carve_rect(x0, ca.y - half, x1 - x0, w)
+	_carve_rect(cb.x - half, y0, w, y1 - y0)

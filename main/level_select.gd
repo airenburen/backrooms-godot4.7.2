@@ -29,7 +29,7 @@ func _build_cards() -> void:
 		desc.set("theme_override_font_sizes/font_size", 13)
 		desc.modulate = Color(0.7, 0.68, 0.62)
 		var idx := i
-		card.pressed.connect(func() -> void: _start(idx))
+		card.pressed.connect(func() -> void: _start(idx, true))
 		cards_box.add_child(card)
 		cards_box.add_child(desc)
 
@@ -43,7 +43,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if visible and event.is_action_pressed("pause"):
 		_on_back()
 
-func _start(level: int) -> void:
+func _start(level: int, fresh: bool = false) -> void:
+	# 点关卡卡片 = 重新开始这一关（换新布局种子）；「继续游戏」仍回上次布局
+	if fresh:
+		GameState.regenerate_level_seed(level)
 	GameState.start_level(level)
 	Loader.go_to("res://main/main.tscn")
 
@@ -51,9 +54,8 @@ func _on_continue() -> void:
 	_start(GameState.current_level)
 
 func _on_restart() -> void:
-	# 重新开始 = 新的一局：换掉 Level 0 的布局种子（继续游戏不受影响）
-	GameState.regenerate_level_seed(0)
-	_start(0)
+	# 重新开始 = 新的一局：新 Level 0 布局
+	_start(0, true)
 
 func _on_back() -> void:
 	visible = false

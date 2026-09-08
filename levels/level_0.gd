@@ -17,8 +17,8 @@ var _exit_glow_mat: StandardMaterial3D
 
 func _init() -> void:
 	# 材质/雾/音效仍用基类默认（就是经典黄墙那套），只覆盖布局相关参数
-	maze_size = 12                        # 25×25 格房间簇（装得下 8~14 个房间）
-	light_range = 8.5                     # 房间多，灯更碎
+	maze_size = 18                        # 37×37 格房间簇（4 大厅 + 14~22 房间 + 柱阵/隔断）
+	light_range = 10.0                    # 地图大了，覆盖半径同步放大
 	light_panel_size = Vector2(0.6, 1.2)  # 2×4 英尺格栅灯
 	flicker_chance = 0.30
 
@@ -63,7 +63,8 @@ func _create_materials() -> void:
 # 覆盖：按墙段所在色区选壁纸 tint（mono-yellow 分区悄悄变调）
 func _emit_wall(container: Node3D, mat: StandardMaterial3D, horizontal: bool,
 		line: int, sgn: int, a: int, b: int) -> CSGBox3D:
-	var zone := int(floor(((a + b) * 0.5) / 7.0 + float(line) / 7.0)) % 3
+	var band: float = maze.width / 3.5   # 三色带分区尺度随地图缩放（25 格时 ≈7）
+	var zone := int(floor(((a + b) * 0.5) / band + float(line) / band)) % 3
 	var wall := super._emit_wall(container, _zone_mats[zone], horizontal, line, sgn, a, b)
 	_decorate_wall_face(container, zone, horizontal, line, sgn, a, b)
 	return wall

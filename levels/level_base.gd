@@ -258,6 +258,14 @@ func _emit_wall(container: Node3D, mat: StandardMaterial3D, horizontal: bool, li
 		wall.position = Vector3(cx2, wall_height * 0.5, cz2)
 	wall.material = mat
 	container.add_child(wall)
+	# 遮挡剔除（全关卡基础优化）：墙是天然遮板，长廊深处视线被挡后，
+	# 身后的装饰/灯/管线实例直接剔除——治"走远就掉帧/卡死"
+	var occ := OccluderInstance3D.new()
+	var occ_box := BoxOccluder3D.new()
+	occ_box.size = wall.size + (Vector3(0.12, 0.0, 0.04) if horizontal else Vector3(0.04, 0.0, 0.12))
+	occ.occluder = occ_box
+	occ.position = wall.position
+	container.add_child(occ)
 	return wall
 
 # ── 灯光 ───────────────────────────────────────────────────

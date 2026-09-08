@@ -12,6 +12,7 @@ __pycache__/
 Thumbs.db
 .idea/
 .vscode/
+.trae/
 *.swp
 *.swo
 

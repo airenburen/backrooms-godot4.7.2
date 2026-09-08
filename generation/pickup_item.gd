@@ -9,6 +9,10 @@ enum Kind { ALMOND, BATTERY }
 const PICKUP_RANGE := 2.6   # 杏仁水 E 拾取半径（米）
 const BATTERY_AMOUNT := 35.0
 
+# 描边色：杏仁水暖奶金 / 电池电光青（粒子同色系）
+const OUTLINE_ALMOND := Color(1.0, 0.92, 0.62)
+const OUTLINE_BATTERY := Color(0.45, 0.95, 1.0)
+
 var kind: int = Kind.ALMOND
 var _player: Node3D
 var _visual: Node3D
@@ -28,6 +32,7 @@ func _ready() -> void:
 
 	_visual = _build_visual(kind)
 	add_child(_visual)
+	_add_sparkles()
 
 	var col := CollisionShape3D.new()
 	var shape := SphereShape3D.new()
@@ -53,6 +58,7 @@ func _build_visual(k: int) -> Node3D:
 		glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		glass.roughness = 0.15
 		body.material = glass
+		glass.next_pass = _outline_mat(OUTLINE_ALMOND)
 		holder.add_child(body)
 		var cap := CSGCylinder3D.new()
 		cap.radius = 0.045
@@ -63,6 +69,7 @@ func _build_visual(k: int) -> Node3D:
 		cap_mat.albedo_color = Color(0.2, 0.35, 0.6)
 		cap_mat.roughness = 0.4
 		cap.material = cap_mat
+		cap_mat.next_pass = _outline_mat(OUTLINE_ALMOND)
 		holder.add_child(cap)
 		# 微光：暗处也能瞥见的一点暖光
 		var glow := OmniLight3D.new()
@@ -82,6 +89,7 @@ func _build_visual(k: int) -> Node3D:
 		shell_mat.roughness = 0.35
 		shell_mat.metallic = 0.6
 		shell.material = shell_mat
+		shell_mat.next_pass = _outline_mat(OUTLINE_BATTERY)
 		holder.add_child(shell)
 		var tip := CSGBox3D.new()
 		tip.size = Vector3(0.05, 0.03, 0.05)
@@ -91,6 +99,7 @@ func _build_visual(k: int) -> Node3D:
 		tip_mat.metallic = 0.8
 		tip_mat.roughness = 0.3
 		tip.material = tip_mat
+		tip_mat.next_pass = _outline_mat(OUTLINE_BATTERY)
 		holder.add_child(tip)
 	return holder
 
@@ -135,3 +144,64 @@ func _play_click(listener: Node3D) -> void:
 	listener.add_child(audio)
 	audio.play()
 	audio.finished.connect(audio.queue_free)
+
+# ── 描边与小粒子 ───────────────────────────────────────────
+
+# 反转法线描边：同一网格沿法线微膨胀 + 只渲染背面，留下一圈不透光轮廓壳
+func _outline_mat(color: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.cull_mode = BaseMaterial3D.CULL_FRONT
+	m.grow = true
+	m.grow_amount = 0.015
+	m.albedo_color = color
+	return m
+
+# 环绕小粒子（挂在根节点上，不随瓶子旋转/浮动）：杏仁水 = 缓缓上浮的暖光尘；电池 = 蹦跳的小电花
+func _add_sparkles() -> void:
+	var p := GPUParticles3D.new()
+	var pm := ParticleProcessMaterial.new()
+	if kind == Kind.ALMOND:
+		p.amount = 10
+		p.lifetime = 1.6
+		p.speed_scale = 0.7
+		pm.gravity = Vector3(0, 0.25, 0)
+		pm.initial_velocity_min = 0.05
+		pm.initial_velocity_max = 0.15
+		pm.spread = 60.0
+		pm.emission_sphere_radius = 0.16
+	else:
+		p.amount = 8
+		p.lifetime = 0.7
+		pm.gravity = Vector3(0, -0.9, 0)
+		pm.initial_velocity_min = 0.4
+		pm.initial_velocity_max = 0.8
+		pm.spread = 85.0
+		pm.emission_sphere_radius = 0.08
+	pm.direction = Vector3(0, 1, 0)
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.scale_min = 0.5
+	pm.scale_max = 1.0
+	pm.color = OUTLINE_ALMOND if kind == Kind.ALMOND else OUTLINE_BATTERY
+	# 渐隐曲线：淡入 → 满亮 → 淡出（additive 下像呼吸的星光）
+	var ramp := Gradient.new()
+	ramp.offsets = PackedFloat32Array([0.0, 0.3, 1.0])
+	ramp.colors = PackedColorArray([Color(1, 1, 1, 0), Color(1, 1, 1, 0.9), Color(1, 1, 1, 0)])
+	var ramp_tex := GradientTexture1D.new()
+	ramp_tex.gradient = ramp
+	pm.color_ramp = ramp_tex
+
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.035, 0.035)
+	var qm := StandardMaterial3D.new()
+	qm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	qm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	qm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	qm.vertex_color_use_as_albedo = true
+	quad.material = qm
+
+	p.process_material = pm
+	p.draw_pass_1 = quad
+	p.position = Vector3(0, 0.28, 0)
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(p)

@@ -320,8 +320,8 @@ func _place_lights() -> void:
 
 	var floor_cells: Array[Vector2i] = maze.get_all_floor_cells()
 	var covered := {}
-	# 覆盖半径拉大 1.7 倍：走廊大部分段落落在黑暗中
-	var range_in_cells: float = light_range * 1.7 / cell_size
+	# 覆盖半径拉大 2.4 倍：灯更稀、走廊更深陷黑暗（同时把体积雾的按灯计费砍半）
+	var range_in_cells: float = light_range * 2.4 / cell_size
 	var positions: Array[Vector2i] = []
 	for cell in floor_cells:
 		if covered.has(cell):
