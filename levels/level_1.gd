@@ -247,18 +247,22 @@ func _custom_build() -> void:
 		aisle += 1
 		var seg_len := float(part.b - part.a + 1) * cell_size - 1.0
 		var center := (float(part.a) + float(part.b + 1)) * 0.5 * cell_size
-		var face := float(part.line) * cell_size
+		# 隔断墙是 1 格厚空心墙带：两面墙皮分别在 line*cs 与 (line+1)*cs。
+		# 货架必须贴墙皮外侧（走廊侧）——按行号线直接外推会整组插进空心墙里看不见
 		var side := 1.0 if randf() < 0.5 else -1.0
-		var off := side * (WALL_THICK * 0.5 + 0.62)
+		var face := float(part.line) * cell_size
+		if side > 0:
+			face += cell_size
+		var at := face + side * (WALL_THICK * 0.5 + 0.62)
 		if part.horizontal:
-			var pz := face + off
+			var pz := at
 			_build_rack(furniture, center, pz, true, seg_len, aisle, int(side))
 			_rack_rects.append({
 				"x0": center - seg_len * 0.5 - 0.7, "x1": center + seg_len * 0.5 + 0.7,
 				"z0": pz - 1.3, "z1": pz + 1.3,
 			})
 		else:
-			var px := face + off
+			var px := at
 			_build_rack(furniture, px, center, false, seg_len, aisle, int(side))
 			_rack_rects.append({
 				"x0": px - 1.3, "x1": px + 1.3,

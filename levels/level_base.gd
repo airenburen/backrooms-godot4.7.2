@@ -386,35 +386,40 @@ func _place_exit() -> void:
 	var world_pos := _cell_to_world(exit_cell)
 
 	var mount_dir := _exit_door_dir()
+	var box_h := _exit_box_h()
 
 	exit_area = Area3D.new()
 	exit_area.name = "ExitDoor"
 	var offset := Vector3(mount_dir.x, 0, mount_dir.y) * (cell_size * 0.5 - 0.2)
-	exit_area.position = world_pos + offset + Vector3(0, wall_height * 0.5, 0)
+	exit_area.position = world_pos + offset + Vector3(0, _exit_base_y() + box_h * 0.5, 0)
 	if mount_dir != Vector2i.ZERO:
 		exit_area.rotation.y = atan2(float(mount_dir.x), float(mount_dir.y))
 
 	var col_shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(cell_size * 0.8, wall_height, cell_size * 0.8)
+	box.size = Vector3(cell_size * 0.8, box_h, cell_size * 0.8)
 	col_shape.shape = box
 	exit_area.add_child(col_shape)
 
+	# 具名：子类关卡（L0 黑洞口 / Level ! 尽头那扇门）据此改造面板。
+	# 匿名节点 add_child 后会被引擎自动改名 @CSGBox3D@N，靠 name == "" 永远找不到
 	var portal := CSGBox3D.new()
-	portal.size = Vector3(cell_size * 0.6, wall_height * 0.9, 0.15)
+	portal.name = "Portal"
+	portal.size = Vector3(cell_size * 0.6, box_h * 0.9, 0.15)
 	portal.position = Vector3(0, 0, 0.1)
 	portal.material = _exit_portal_mat
 	portal.use_collision = false
 	exit_area.add_child(portal)
 
 	var label := Label3D.new()
+	label.name = "ExitLabel"
 	label.text = "EXIT"
 	label.font_size = 96
 	label.pixel_size = 0.004
 	label.double_sided = true
 	label.modulate = Color(0.2, 1.0, 0.3)
 	label.outline_size = 12
-	label.position = Vector3(0, wall_height * 0.35, -0.3)
+	label.position = Vector3(0, box_h * 0.35, -0.3)
 	exit_area.add_child(label)
 
 	add_child(exit_area)
@@ -513,6 +518,14 @@ func _landmark_y_offset(_cell: Vector2i) -> float:
 # 钩子：出口选格（泳室覆盖：上层厅台地上不去会 3D 死局，强制选下层格）
 func _pick_exit_cell() -> Vector2i:
 	return maze.find_farthest_floor(spawn_cell)
+
+# 钩子：出口所在楼层的基准标高（泳室出口搬到二楼 → UPPER_Y，其余关默认地面）
+func _exit_base_y() -> float:
+	return 0.0
+
+# 钩子：出口盒 / 触发盒高度（默认通高；泳室缩到 2.6，只圈住玩家不再误触）
+func _exit_box_h() -> float:
+	return wall_height
 
 # 钩子：该格是否禁止放地标（如泳室泳池格——地标会悬在水面上）
 func _landmark_blocked(_cell: Vector2i) -> bool:

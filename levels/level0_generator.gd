@@ -6,6 +6,7 @@ extends MazeGenerator
 # 基类的墙体/地标/出口/距离场流程零改动可用。
 
 var rooms: Array[Rect2i] = []
+var _path_cells := {}    # MST 通道格：柱阵必须避开，否则通道行上会冒出结构柱
 
 func generate(maze_size: int, seed_value: int = -1) -> void:
 	if seed_value >= 0:
@@ -20,6 +21,7 @@ func generate(maze_size: int, seed_value: int = -1) -> void:
 	room_rects.clear()
 	dist = PackedInt32Array()
 	rooms.clear()
+	_path_cells.clear()
 
 	# 1. 房间装箱：先塞 4 个 6~8 见方大厅（柱阵载体），再用 3~8 随机房填缝到 14~22；
 	#    全部互不重叠、间隔 ≥1 格
@@ -73,6 +75,8 @@ func generate(maze_size: int, seed_value: int = -1) -> void:
 func _add_colonnade(rect: Rect2i) -> void:
 	for yy in range(rect.position.y + 2, rect.end.y - 1, 2):
 		for xx in range(rect.position.x + 2, rect.end.x - 1, 2):
+			if _path_cells.has(_index(xx, yy)):
+				continue  # 通道经过的格留空：柱阵本在建通道之后，否则路中间会立起一根柱子
 			grid[_index(xx, yy)] = Cell.WALL
 			pillar_cells[_index(xx, yy)] = true
 
@@ -105,12 +109,14 @@ func _carve_h(x0: int, x1: int, y: int) -> void:
 	for x in range(mini(x0, x1), maxi(x0, x1) + 1):
 		if x >= 1 and x <= width - 2:
 			grid[_index(x, y)] = Cell.FLOOR
+			_path_cells[_index(x, y)] = true
 
 func _carve_v(y0: int, y1: int, x: int) -> void:
 	x = clampi(x, 1, width - 2)
 	for y in range(mini(y0, y1), maxi(y0, y1) + 1):
 		if y >= 1 and y <= height - 2:
 			grid[_index(x, y)] = Cell.FLOOR
+			_path_cells[_index(x, y)] = true
 
 # 房内隔断：沿长轴方向一道 1 格厚墙，两端各留 1 格缺口（绕过去还有路）
 func _add_partition(rect: Rect2i) -> void:

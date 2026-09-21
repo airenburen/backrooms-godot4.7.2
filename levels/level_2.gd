@@ -55,8 +55,8 @@ func _create_materials() -> void:
 
 func _emit_wall(container: Node3D, mat: StandardMaterial3D, horizontal: bool, line: int, sgn: int, a: int, b: int) -> CSGBox3D:
 	var wall: CSGBox3D = super(container, mat, horizontal, line, sgn, a, b)
-	var len := float(b - a + 1) * cell_size - 0.6
-	if len < 1.6:
+	var run_len := float(b - a + 1) * cell_size - 0.6
+	if run_len < 1.6:
 		return wall
 	# 近地 0.9m 霉斑墙裙带（潮湿在墙根留下的痕迹）
 	_wall_band(container, horizontal, line, sgn, a, b, 0.9, Color(0.20, 0.21, 0.18))
@@ -70,16 +70,16 @@ func _emit_wall(container: Node3D, mat: StandardMaterial3D, horizontal: bool, li
 	var surf := float(line) * cell_size
 	var along := (float(a) + float(b - a + 1) * 0.5) * cell_size
 	if roll < 0.55:
-		_pipe_cluster(container, horizontal, along, surf, sgn, len)
+		_pipe_cluster(container, horizontal, along, surf, sgn, run_len)
 	elif roll < 0.82:
 		# 平行管束：2-3 根中细管
 		var h := wall_height - 0.32
 		var n_p := 3 if randf() < 0.4 else 2
 		for i in n_p:
 			_pipe_line(container, horizontal, along, surf, sgn, h - i * 0.19,
-				randf_range(0.055, 0.09), len, false)
+				randf_range(0.055, 0.09), run_len, false)
 	else:
-		_cable_tray(container, horizontal, along, surf, sgn, len)
+		_cable_tray(container, horizontal, along, surf, sgn, run_len)
 	return wall
 
 # 贴墙色带：高 0.9m 深色霉斑 / 顶部 0.3m 水渍（薄板凸出墙面 1cm）

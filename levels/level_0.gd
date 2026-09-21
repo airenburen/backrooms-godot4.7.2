@@ -249,32 +249,15 @@ func _build_ladder(container: Node3D, cell: Vector2i, dir: Vector2i) -> void:
 
 # ── 出口：黑暗洞口（纯黑背板 + 暗黄微光内框，替换绿光面板）──
 
+# 几何/检测盒/闸门沿用基类 _place_exit（含 _pick_exit_cell 钩子），
+# 这里只把具名 Portal 面板换成"更黑的洞口 + 微光内框"，避免整段复制基类实现两头不同步
+
 func _place_exit() -> void:
-	exit_cell = maze.find_farthest_floor(spawn_cell)
-	var world_pos := _cell_to_world(exit_cell)
-
-	var mount_dir := _exit_door_dir()
-
-	exit_area = Area3D.new()
-	exit_area.name = "ExitDoor"
-	var offset := Vector3(mount_dir.x, 0, mount_dir.y) * (cell_size * 0.5 - 0.2)
-	exit_area.position = world_pos + offset + Vector3(0, wall_height * 0.5, 0)
-	if mount_dir != Vector2i.ZERO:
-		exit_area.rotation.y = atan2(float(mount_dir.x), float(mount_dir.y))
-
-	var col_shape := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(cell_size * 0.8, wall_height, cell_size * 0.8)
-	col_shape.shape = box
-	exit_area.add_child(col_shape)
-
-	# 纯黑背板：一个"比夜色更黑"的洞口
-	var portal := CSGBox3D.new()
-	portal.size = Vector3(cell_size * 0.6, wall_height * 0.9, 0.15)
-	portal.position = Vector3(0, 0, 0.1)
+	super()
+	var portal := exit_area.get_node_or_null("Portal") as CSGBox3D
+	if portal == null:
+		return
 	portal.material = _dark_exit_mat
-	portal.use_collision = false
-	exit_area.add_child(portal)
 
 	# 洞口内框：暗黄微光边条（暗示"里面有东西"而不是"这里有 UI"）
 	var pw := cell_size * 0.6
@@ -294,16 +277,6 @@ func _place_exit() -> void:
 		exit_area.add_child(strip)
 
 	# EXIT 标牌：暗黄减半（可辨识性兜底）
-	var label := Label3D.new()
-	label.text = "EXIT"
-	label.font_size = 96
-	label.pixel_size = 0.004
-	label.double_sided = true
-	label.modulate = Color(0.8, 0.72, 0.45)
-	label.outline_size = 12
-	label.position = Vector3(0, wall_height * 0.35, -0.3)
-	exit_area.add_child(label)
-
-	add_child(exit_area)
-	exit_area.body_entered.connect(_on_exit_door_entered)
-	maze.compute_distance_field(exit_cell)
+	var label := exit_area.get_node_or_null("ExitLabel") as Label3D
+	if label:
+		label.modulate = Color(0.8, 0.72, 0.45)

@@ -281,20 +281,28 @@ func _place_lights() -> void:
 
 func _place_exit() -> void:
 	super()
-	# 把基类的绿光传送门改造成"尽头那扇门"：暗红门板 + 中缝 + 门楣
-	for child in exit_area.get_children():
-		if child is CSGBox3D and child.name == "":
-			var portal := child as CSGBox3D
-			portal.material = _door_mat()
-			portal.size = Vector3(cell_size * 0.62, wall_height * 0.72, 0.14)
-			portal.position = Vector3(0, -wall_height * 0.09, 0.1)
-			var seam := CSGBox3D.new()
-			seam.size = Vector3(0.03, wall_height * 0.72, 0.16)
-			seam.position = portal.position
-			seam.material = _skirt_mat()
-			seam.use_collision = false
-			exit_area.add_child(seam)
-			break
+	# 把基类的绿光传送门改造成"尽头那扇门"：暗红门板 + 中缝
+	# （必须按具名 Portal 找：匿名节点 add_child 后会被引擎自动改名 @CSGBox3D@N，
+	#  靠 child.name == "" 永远匹配不到，改造整段不会执行）
+	var portal := exit_area.get_node_or_null("Portal") as CSGBox3D
+	if portal == null:
+		return
+	portal.material = _door_mat()
+	portal.size = Vector3(cell_size * 0.62, wall_height * 0.72, 0.14)
+	portal.position = Vector3(0, -wall_height * 0.09, 0.1)
+	var seam := CSGBox3D.new()
+	seam.size = Vector3(0.03, wall_height * 0.72, 0.16)
+	seam.position = portal.position
+	seam.material = _skirt_mat()
+	seam.use_collision = false
+	exit_area.add_child(seam)
+
+# 出口贴在走廊尽头的横墙上（正对冲刺方向）：跑到底正面看到门，
+# 而不是门在侧墙上从右手边一晃而过
+func _exit_door_dir() -> Vector2i:
+	if maze.is_wall(exit_cell.x, exit_cell.y + 1):
+		return Vector2i(0, 1)
+	return super()
 
 # —— 路障：翻倒的文件柜/长桌 + 散落纸张（无碰撞，纯视觉擦身）——
 

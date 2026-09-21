@@ -25,6 +25,9 @@ const JUMP_VELOCITY := 5.0
 const BHOP_AIR_ACCEL := 30.0
 const BHOP_MAX_SPEED := 11.0
 
+# 控制台 noclip 飞行速度（Shift 再乘 2.5）
+const NOCLIP_SPEED := 12.0
+
 var stamina: float = 100.0
 var max_stamina: float = 100.0
 var stamina_drain_rate: float = 20.0
@@ -35,6 +38,10 @@ var head_bob_time: float = 0.0
 var last_step_count: int = 0
 var flashlight_battery: float = 100.0
 var flashlight_drain_rate: float = 2.0
+
+# ── 控制台调试开关（无 UI、不存档，仅运行时）──────────────────────
+var noclip: bool = false          # 穿墙飞行
+var speed_multiplier: float = 1.0 # 移动速度倍率（控制台 speed 命令）
 
 @onready var camera: Camera3D = $Camera3D
 @onready var flashlight: SpotLight3D = $Camera3D/Flashlight
@@ -67,6 +74,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_toggle_flashlight()
 
 func _physics_process(delta: float) -> void:
+	if noclip:
+		_noclip_fly(delta)
+		return
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
 
@@ -83,10 +93,10 @@ func _physics_process(delta: float) -> void:
 	elif Input.is_action_just_pressed("jump"):
 		velocity.y = JUMP_VELOCITY
 
-	var current_speed := WALK_SPEED
+	var current_speed := WALK_SPEED * speed_multiplier
 	if Input.is_action_pressed("crouch"):
 		is_crouching = true
-		current_speed = CROUCH_SPEED
+		current_speed = CROUCH_SPEED * speed_multiplier
 		_crouch()
 	else:
 		is_crouching = false
@@ -103,9 +113,9 @@ func _physics_process(delta: float) -> void:
 		stamina = max_stamina
 		is_stamina_exhausted = false
 		if can_sprint:
-			current_speed = SPRINT_SPEED
+			current_speed = SPRINT_SPEED * speed_multiplier
 	elif can_sprint:
-		current_speed = SPRINT_SPEED
+		current_speed = SPRINT_SPEED * speed_multiplier
 		stamina -= stamina_drain_rate * delta
 		if stamina <= 0.0:
 			stamina = 0.0
@@ -153,6 +163,23 @@ func _air_accelerate(wishdir: Vector3, accel: float) -> void:
 		hs *= BHOP_MAX_SPEED / cur
 	velocity.x = hs.x
 	velocity.z = hs.z
+
+# 控制台 noclip：沿视线自由飞行，不做碰撞检测、不吃重力，也不参与步伐/体力
+func _noclip_fly(delta: float) -> void:
+	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var basis := camera.global_transform.basis
+	# input_dir.y 前进为负，而相机 +Z 指向身后，两者相乘刚好抵消成"朝视线前方"
+	var dir := basis.x * input_dir.x + basis.z * input_dir.y
+	if Input.is_action_pressed("jump"):
+		dir += Vector3.UP
+	if Input.is_action_pressed("crouch"):
+		dir -= Vector3.UP
+	if dir.length() > 0.01:
+		var speed := NOCLIP_SPEED * speed_multiplier
+		if Input.is_action_pressed("sprint"):
+			speed *= 2.5
+		global_position += dir.normalized() * speed * delta
+	velocity = Vector3.ZERO
 
 func _toggle_flashlight() -> void:
 	if click_audio:
